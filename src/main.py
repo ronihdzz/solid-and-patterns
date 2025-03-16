@@ -9,13 +9,11 @@ from stripe.error import StripeError
 _ = load_dotenv()
 
 
-@dataclass
-class PaymentProcessor:
-    def process_transaction(self, customer_data, payment_data) -> Charge:
-        
-        # Responsabilidad de validacion
-        # -----------------------------------------------
-    
+
+class CustomerValidator:
+
+    def validate(self, customer_data: dict) -> None:
+
         if not customer_data.get("name"):
             print("Invalid customer data: missing name")
             raise ValueError("Invalid customer data: missing name")
@@ -24,16 +22,20 @@ class PaymentProcessor:
             print("Invalid customer data: missing contact info")
             raise ValueError("Invalid customer data: missing contact info")
 
+
+class PaymentValidator:
+
+    def validate(self, payment_data: dict) -> None:
+
         if not payment_data.get("source"):
             print("Invalid payment data")
             raise ValueError("Invalid payment data")
 
+
+class StripePaymentProcessor:
+    def process_transaction(self, customer_data, payment_data) -> Charge:
+
         stripe.api_key = os.getenv("STRIPE_API_KEY")
-
-
-        # Responsabilidad de procesamiento de pago
-        # ----------------------------------------------
-
         try:
             charge = stripe.Charge.create(
                 amount=payment_data["amount"],
@@ -42,14 +44,15 @@ class PaymentProcessor:
                 description="Charge for " + customer_data["name"],
             )
             print("Payment successful")
+            return charge
         except StripeError as e:
             print("Payment failed:", e)
             raise e
 
 
-        # Responsabilidad de notificacion
-        # ----------------------------------------------
 
+class Notifier:
+    def send_confirmation(self, customer_data: dict, payment_data: dict, charge: Charge) -> None:
         if "email" in customer_data["contact_info"]:
             # import smtplib
             from email.mime.text import MIMEText
@@ -75,20 +78,41 @@ class PaymentProcessor:
             print("No valid contact information for notification")
             return charge
 
-        # Responsabilidad de registro
-        # ----------------------------------------------
 
+class TransactionLogger:
+
+    def log(self, customer_data: dict, payment_data: dict, charge: Charge) -> None:
         with open("transactions.log", "a") as log_file:
             log_file.write(
                 f"{customer_data['name']} paid {payment_data['amount']}\n"
             )
             log_file.write(f"Payment status: {charge['status']}\n")
 
+
+
+
+
+class PaymentService:
+    customer_validator = CustomerValidator()
+    payment_validator = PaymentValidator()
+    payment_processor = StripePaymentProcessor()
+    notifier = Notifier()
+    transaction_logger = TransactionLogger()
+
+    def process_transaction(self, customer_data: dict, payment_data: dict) -> Charge:
+        self.customer_validator.validate(customer_data)
+        self.payment_validator.validate(payment_data)
+        charge = self.payment_processor.process_transaction(customer_data, payment_data)
+        self.notifier.send_confirmation(customer_data, payment_data, charge)
+        self.transaction_logger.log(customer_data, payment_data, charge)
         return charge
 
 
+
+
+
 if __name__ == "__main__":
-    payment_processor = PaymentProcessor()
+    payment_processor = PaymentService()
 
     customer_data_with_email = {
         "name": "John Doe",
