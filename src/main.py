@@ -1,13 +1,23 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import stripe
 from dotenv import load_dotenv
 from stripe import Charge
 from stripe.error import StripeError
+from abc import ABC, abstractmethod
 
 _ = load_dotenv()
 
+class PaymentProcessor(ABC):
+    @abstractmethod
+    def process_transaction(self, customer_data: dict, payment_data: dict) -> Charge:
+        pass
+
+class Notifier(ABC):
+    @abstractmethod
+    def send_confirmation(self, customer_data: dict, p ) -> None:
+        pass
 
 
 class CustomerValidator:
@@ -32,7 +42,7 @@ class PaymentValidator:
             raise ValueError("Invalid payment data")
 
 
-class StripePaymentProcessor:
+class StripePaymentProcessor(PaymentProcessor):
     def process_transaction(self, customer_data, payment_data) -> Charge:
 
         stripe.api_key = os.getenv("STRIPE_API_KEY")
@@ -50,33 +60,31 @@ class StripePaymentProcessor:
             raise e
 
 
+class EmailNotifier(Notifier):
+    def send_confirmation(self, customer_data: dict) -> None:
+    
+        # import smtplib
+        from email.mime.text import MIMEText
 
-class Notifier:
-    def send_confirmation(self, customer_data: dict, payment_data: dict, charge: Charge) -> None:
-        if "email" in customer_data["contact_info"]:
-            # import smtplib
-            from email.mime.text import MIMEText
+        msg = MIMEText("Thank you for your payment.")
+        msg["Subject"] = "Payment Confirmation"
+        msg["From"] = "no-reply@example.com"
+        msg["To"] = customer_data["contact_info"]["email"]
 
-            msg = MIMEText("Thank you for your payment.")
-            msg["Subject"] = "Payment Confirmation"
-            msg["From"] = "no-reply@example.com"
-            msg["To"] = customer_data["contact_info"]["email"]
+        # server = smtplib.SMTP("localhost")
+        # server.send_message(msg)
+        # server.quit()
+        print("Email sent to", customer_data["contact_info"]["email"])
 
-            # server = smtplib.SMTP("localhost")
-            # server.send_message(msg)
-            # server.quit()
-            print("Email sent to", customer_data["contact_info"]["email"])
 
-        elif "phone" in customer_data["contact_info"]:
-            phone_number = customer_data["contact_info"]["phone"]
-            sms_gateway = "the custom SMS Gateway"
-            print(
-                f"send the sms using {sms_gateway}: SMS sent to {phone_number}: Thank you for your payment."
-            )
+class SMSNotifier(Notifier):
+    def send_confirmation(self, customer_data: dict) -> None:
+        phone_number = customer_data["contact_info"]["phone"]
+        sms_gateway = "the custom SMS Gateway"
+        print(
+            f"send the sms using {sms_gateway}: SMS sent to {phone_number}: Thank you for your payment."
+        )
 
-        else:
-            print("No valid contact information for notification")
-            return charge
 
 
 class TransactionLogger:
@@ -91,19 +99,19 @@ class TransactionLogger:
 
 
 
-
+@dataclass
 class PaymentService:
     customer_validator = CustomerValidator()
     payment_validator = PaymentValidator()
-    payment_processor = StripePaymentProcessor()
-    notifier = Notifier()
+    payment_processor: PaymentProcessor = field(default_factory=StripePaymentProcessor)
+    notifier: Notifier = field(default_factory=EmailNotifier)
     transaction_logger = TransactionLogger()
 
     def process_transaction(self, customer_data: dict, payment_data: dict) -> Charge:
         self.customer_validator.validate(customer_data)
         self.payment_validator.validate(payment_data)
         charge = self.payment_processor.process_transaction(customer_data, payment_data)
-        self.notifier.send_confirmation(customer_data, payment_data, charge)
+        self.notifier.send_confirmation(customer_data)
         self.transaction_logger.log(customer_data, payment_data, charge)
         return charge
 
@@ -112,22 +120,37 @@ class PaymentService:
 
 
 if __name__ == "__main__":
-    payment_processor = PaymentService()
 
-    customer_data_with_email = {
-        "name": "John Doe",
-        "contact_info": {"email": "e@mail.com"},
-    }
+    # Example 1: Phone notification
+    # -------------------------------------
+
+    payment_processor = PaymentService(
+        notifier=SMSNotifier()
+    )
+
     customer_data_with_phone = {
-        "name": "Platzi Python",
+        "name": "John Doe",
         "contact_info": {"phone": "1234567890"},
     }
 
     payment_data = {"amount": 500, "source": "tok_mastercard", "cvv": 123}
 
     payment_processor.process_transaction(
-        customer_data_with_email, payment_data
-    )
-    payment_processor.process_transaction(
         customer_data_with_phone, payment_data
+    )
+
+    # Example 2: Email notification
+    # -------------------------------------
+
+    payment_processor = PaymentService(
+        notifier=EmailNotifier()
+    )
+
+    customer_data_with_email = {
+        "name": "Platzi Python",
+        "contact_info": {"email": "e@mail.com"},
+    }
+
+    payment_processor.process_transaction(
+        customer_data_with_email, payment_data
     )
