@@ -5,19 +5,17 @@ import stripe
 from dotenv import load_dotenv
 from stripe import Charge
 from stripe.error import StripeError
-from abc import ABC, abstractmethod
+from typing import Protocol
 
 _ = load_dotenv()
 
-class PaymentProcessor(ABC):
-    @abstractmethod
+class PaymentProcessor(Protocol):
     def process_transaction(self, customer_data: dict, payment_data: dict) -> Charge:
-        pass
+        ...
 
-class Notifier(ABC):
-    @abstractmethod
-    def send_confirmation(self, customer_data: dict, p ) -> None:
-        pass
+class Notifier(Protocol):
+    def send_confirmation(self, customer_data: dict ) -> None:
+        ...
 
 
 class CustomerValidator:
@@ -42,7 +40,7 @@ class PaymentValidator:
             raise ValueError("Invalid payment data")
 
 
-class StripePaymentProcessor(PaymentProcessor):
+class StripePaymentProcessor():
     def process_transaction(self, customer_data, payment_data) -> Charge:
 
         stripe.api_key = os.getenv("STRIPE_API_KEY")
@@ -60,7 +58,7 @@ class StripePaymentProcessor(PaymentProcessor):
             raise e
 
 
-class EmailNotifier(Notifier):
+class EmailNotifier():
     def send_confirmation(self, customer_data: dict) -> None:
     
         # import smtplib
@@ -77,7 +75,7 @@ class EmailNotifier(Notifier):
         print("Email sent to", customer_data["contact_info"]["email"])
 
 
-class SMSNotifier(Notifier):
+class SMSNotifier():
     def send_confirmation(self, customer_data: dict) -> None:
         phone_number = customer_data["contact_info"]["phone"]
         sms_gateway = "the custom SMS Gateway"
